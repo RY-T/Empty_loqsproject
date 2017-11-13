@@ -52,6 +52,7 @@ rule all:
 		'Index_gen/Repeat_Masker/modified_bed/fasta/pri_miRNA.fa',
 		'Index_gen/Repeat_Masker/modified_bed/fasta/flybasehpRNA.fa',
 		'Index_gen/Repeat_Masker/modified_bed/fasta/bt_indexes/test.txt',
+		'Input_files/Citation_Index/test.txt',
 
 
 rule extract_flybase_to_bed_format:
@@ -684,6 +685,27 @@ rule hairpin_fa:
 	bedtools getfasta -name -fi {input.genome} -bed {output.bed_file} -fo {output.fasta_file}
 	'''
 
+rule citation_index:
+	input:
+		genome = 'Index_gen/Repeat_Masker/Index0.fa'
+	output:
+		cit_test_text='Input_files/Citation_Index/test.txt'
+	run:
+		import os
+		out_text_file=open(output.cit_test_text,"w")
+		cit_bed_files_folder='Input_files/Citation_Index'
+		cit_bed_list=[]
+		for file in os.listdir(os.path.join(os.getcwd(),cit_bed_files_folder)):
+			if file.endswith(".bed"):
+				cit_bed_list.append(file)
+		fasta_folder='Index_gen/Repeat_Masker/modified_bed/fasta'
+		for bed in cit_bed_list:
+			in_bed=os.path.join(cit_bed_files_folder,bed)
+			out_fa=os.path.join(fasta_folder,bed[:-4])
+			shell('bedtools getfasta -name -fi {input.genome} -bed {in_bed} -fo {out_fa}.fa')
+			out_text_file.write(out_fa+'\n')
+		out_text_file.close()
+
 rule make_bt_indexes:
 	input:
 		fasta_file=expand(fasta_file_path)
@@ -697,7 +719,7 @@ rule make_bt_indexes:
 		for file in os.listdir(os.path.join(os.getcwd(),fasta_folder)):
 			if file.endswith(".fa"):
 				fasta_file_path.append(os.path.join(fasta_folder,file))
-		rename_dict={'Index0.fa':'Index0','rRNA.fa':'Index1','exon_PT_rRNA.fa':'Index2','CR14033.fa':'Index3','RNAonly.fa':'Index4','exon_PT_tRNA.fa':'Index5','exon_PT_snRNA.fa':'Index6','exon_PT_snoRNA.fa':'Index7','pri_miRNA.fa':'Index8','flybasehpRNA.fa':'Index9','LTR.fa':'Index10','LINE.fa':'Index11','DNA.fa':'Index12','Satellite.fa':'Index13','Low_complexity.fa':'Index14','RC.fa':'Index15','Simple_repeat.fa':'Index16','Other.fa':'Index17','Unknown.fa':'Index18','transposable_element.fa':'Index19','ARTEFACT.fa':'Index20'}
+		rename_dict={'Index0.fa':'Index0','rRNA.fa':'Index1','exon_PT_rRNA.fa':'Index2','CR14033.fa':'Index3','RNAonly.fa':'Index4','exon_PT_tRNA.fa':'Index5','exon_PT_snRNA.fa':'Index6','exon_PT_snoRNA.fa':'Index7','pri_miRNA.fa':'Index8','flybasehpRNA.fa':'Index9','LTR.fa':'Index10','LINE.fa':'Index11','DNA.fa':'Index12','Satellite.fa':'Index13','Low_complexity.fa':'Index14','RC.fa':'Index15','Simple_repeat.fa':'Index16','Other.fa':'Index17','Unknown.fa':'Index18','transposable_element.fa':'Index19','ARTEFACT.fa':'Index20','01_okamura_DM6.fa':'Index21','02_czech_DM6.fa':'Index22','03_kawamura_DM6.fa':'Index23','04_ghildiyal_DM6.fa':'Index24'}
 		for file in fasta_file_path:
 			if file[len(fasta_folder)+1:] not in rename_dict:
 				continue

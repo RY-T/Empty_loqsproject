@@ -1,0 +1,5 @@
+Index_gen/Repeat_Masker/modified_bed/fasta/01_okamura_DM6
+Index_gen/Repeat_Masker/modified_bed/fasta/02_czech_DM6
+Index_gen/Repeat_Masker/modified_bed/fasta/03_kawamura_DM6
+Index_gen/Repeat_Masker/modified_bed/fasta/04_ghildiyal_DM6
+Index_gen/Repeat_Masker/modified_bed/fasta/05_CR14033_DM6
