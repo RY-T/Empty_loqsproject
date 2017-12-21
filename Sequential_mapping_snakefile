@@ -6,18 +6,19 @@
 
 rule all:
 	input:
-		'Seq_map_directory/test.txt',
+		'spike_in_count.done',
+		"Seq_mapping.done",
 		'All_map_directory/test.txt',
 		'Seq_map_directory/count.txt',
 		'All_map_directory/count.txt',
 		'Seq_map_directory/count.png',
+		'Seq_map_directory/count2.png',
 		'Seq_map_directory_M/test.txt',
 		'Seq_map_directory_M/count.txt',
 		'Seq_map_directory_M/count.png',	
 
 rule sequential_mapping:
-	output: 
-		test_text='Seq_map_directory/test.txt'
+	output:touch("Seq_mapping.done")
 	run:
 		import os
 		from pathlib import Path
@@ -26,7 +27,7 @@ rule sequential_mapping:
 		out_dir=Path('Seq_map_directory')
 		if out_dir.is_dir() != True:
 			os.mkdir('Seq_map_directory')
-		out_text_file=open(output.test_text,"a")
+		out_text_file=open('Seq_map_directory/test.txt',"a")
 		bt_index_folder='Index_gen/Repeat_Masker/modified_bed/fasta/bt_indexes/'
 		for file in os.listdir(os.path.join(os.getcwd(),bt_index_folder)):
 			if file.endswith(".rev.1.ebwt"):
@@ -93,6 +94,7 @@ rule all_index_mapping:
 		out_text_file.close()
 
 rule count_by_lib:
+	input:'Seq_mapping.done'
 	output: 
 		count_text='Seq_map_directory/count.txt'
 	run:
@@ -104,7 +106,7 @@ rule count_by_lib:
 			if file.endswith(".bowtie.txt"):
 				Full_list.append(file)
 
-		out_text_file=open(output.count_text,"a")
+		out_text_file=open('Seq_map_directory/count.txt',"a")
 		for i in Full_list:	
 			if os.path.getsize(os.path.join(Seq_folder,i))<=0:
 				continue
@@ -149,14 +151,30 @@ rule count_by_lib_all_map:
 				out_text_file.write('\n'+i+'\t'+str(sum_all(everything)))
 		out_text_file.close()
 
+rule run_spike_in_script:
+	output:touch('spike_in_count.done')
+	run:
+		shell('snakemake -s spikein_normalisation_snakefile')
+
 rule count_to_graph_R:
 	input:
 		'Seq_map_directory/count.txt',
+		'Spike_in_folder/Output/Spike_in_count.txt',
+		'spike_in_count.done'
 	output:
 		'Seq_map_directory/count.png'
 	script:
 		"Input_files/R_scripts/Count_to_graph_1.R"
 
+rule count_to_graph_R_2:
+	input:
+		'Seq_map_directory/count.txt',
+		'Spike_in_folder/Output/Spike_in_count.txt',
+		'spike_in_count.done'
+	output:
+		'Seq_map_directory/count2.png'
+	script:
+		"Input_files/R_scripts/Count_to_graph_2.R"
 
 
 rule sequential_mapping_multiple_mapping:

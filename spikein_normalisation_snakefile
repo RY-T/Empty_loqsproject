@@ -1,0 +1,97 @@
+#save log to get read numbers
+
+
+
+rule all:
+	input:
+		'folder_flag.done',
+		'Spike_in_folder/Flags/Index.done',
+		'Spike_in_folder/Flags/mapping.done',
+		'Spike_in_folder/Output/Spike_in_count.txt'
+
+
+rule make_folders:
+	output:touch('folder_flag.done')
+	run:
+		import os
+		from pathlib import Path
+		Spikein_folder=Path('Spike_in_folder')
+		if Spikein_folder.is_dir() != True:
+			os.mkdir('Spike_in_folder')
+		Index_folder=Path('Spike_in_folder/Index')
+		if Index_folder.is_dir() != True:
+			os.mkdir('Spike_in_folder/Index')
+		Output_folder=Path('Spike_in_folder/Output')
+		if Output_folder.is_dir() != True:
+			os.mkdir('Spike_in_folder/Output')
+		Logs_folder=Path('Spike_in_folder/Logs')
+		if Logs_folder.is_dir() != True:
+			os.mkdir('Spike_in_folder/Logs')
+		Flags_folder=Path('Spike_in_folder/Flags')
+		if Flags_folder.is_dir() != True:
+			os.mkdir('Spike_in_folder/Flags')
+
+rule build_spike_in_indexes:
+	input:'Input_files/Okamura_Lab/spikeinset01.fa'
+	output:touch('Spike_in_folder/Flags/Index.done')
+	shell:'bowtie-build {input} Spike_in_folder/Index/spikeinset01'		
+
+rule map_to_index:
+	output:
+		touch('Spike_in_folder/Flags/mapping.done')
+
+	run:
+		import os
+		from pathlib import Path
+		Output_folder=Path('Spike_in_folder/Output')
+		Logs_folder=Path('Spike_in_folder/Logs')
+		small_RNA_lib_folder=Path('Preprocessing/02preprocessouput')
+		Index_list=[]
+		Library_list=[]
+		Index_folder=Path('Spike_in_folder/Index')
+		for file in os.listdir(Index_folder):
+			if file.endswith(".rev.1.ebwt"):
+				Index_list.append(file[:-11])
+		for file in os.listdir(small_RNA_lib_folder):
+			if file.endswith('.fasta'):
+				Library_list.append(file)
+		for lib in Library_list:
+			Name=lib[:-23]
+			for index in Index_list:
+				shell('bowtie -f -n 0 --al {Output_folder}/{Name}.spike.txt {Index_folder}/{index} {small_RNA_lib_folder}/{lib} > {Output_folder}/{Name}.spike.bowtie.txt 2>{Logs_folder}/{Name}.txt')	 
+
+rule count_by_lib_spikein:
+	output: 
+		Map_summary='Spike_in_folder/Output/Spike_in_count.txt'
+	run:
+		import os
+		import pandas as pd
+		Full_list=[]
+		Seq_folder='Spike_in_folder/Output'
+		for file in os.listdir(os.path.join(os.getcwd(),Seq_folder)):
+			if file.endswith(".bowtie.txt"):
+				Full_list.append(file)
+		out_text_file=open(output.Map_summary,"a")
+		for i in Full_list:	
+			if os.path.getsize(os.path.join(Seq_folder,i))<=0:
+				continue
+			else:
+				everything = pd.read_csv(os.path.join(Seq_folder,i),sep="\t+",header=None)
+				def count_one(x):
+					return int(x.split("_",3)[2])
+				def sum_all(seq):
+					counter=0
+					for i in range(len(seq)):
+						counter+=seq[i][1]
+					return counter
+				a=everything[0].value_counts()
+				lst=[]
+				for j in range(len(a)):
+					lst.append([a.index[j],count_one(a.index[j])/a[a.index[j]]])
+				counts=sum_all(lst)
+				out_text_file.write('\n'+i+'\t'+str(counts))
+		out_text_file.close()
+
+
+
+

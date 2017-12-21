@@ -1,0 +1,3 @@
+dmel-all-chromosome-r6.18.fasta
+dmel-all-r6.18.gff
+FlybaseCR14033.fa

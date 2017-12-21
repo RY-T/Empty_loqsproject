@@ -1,0 +1,5 @@
+dm6.18_flybase_FT_exon_mRNA-mRNA.intersect.ID.bed
+dm6.18_flybase_FT_exon_mRNA-ncRNA.intersect.ID.bed
+dm6.18_flybase_FT_exon_mRNA-tRNA.intersect.ID.bed
+dm6.18_flybase_FT_exon_mRNA-snoRNA.intersect.ID.bed
+dm6.18_flybase_FT_exon_mRNA-pseudogene.intersect.ID.bed
