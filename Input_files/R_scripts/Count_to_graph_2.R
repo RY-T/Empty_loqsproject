@@ -79,9 +79,9 @@ do_something <- function(data_path, out_path, spike_in_norm) {
   final_plot
   png(filename = out_path)
   plot<-par(mfrow=c(1,1))
-  par(mfrow=c(1,1))
-  barplot(final_plot,names.arg = colnames(final_plot),col=c(4,2,3),beside=TRUE)
-  legend("topright", fill=c(4,2,3), legend=row.names(final_plot))
+  par(mfrow=c(1,1), mar=c(8, 5, 5, 5))
+  barplot(final_plot,names.arg = colnames(final_plot),col=c(2,3,7),beside=TRUE,las=2)
+  legend("topright", fill=c(2,3,7), legend=row.names(final_plot))
   dev.off()
 }
 

@@ -1,0 +1,195 @@
+import os
+from pathlib import Path
+
+rule all:
+	input:
+		'GSE26230/folder_flag.done',
+		'GSE26230/flags/renaming.done',
+		'GSE26230/flags/fastqc.done',
+		'GSE26230/flags/to_fasta.done',
+		'GSE26230/flags/formatting.done',
+		'GSE26230/flags/Sequential_mapping.done',
+		'GSE26230/flags/Count_Sequential_mapping.done',
+		'GSE26230/output/Counts/count.txt',
+		'GSE26230/flags/Count_to_graph.done'
+
+rule make_folders:
+	output:
+		touch('GSE26230/folder_flag.done')
+	run:
+		import os
+		from pathlib import Path
+		GSE26230_output = Path('GSE26230/output')
+		if not GSE26230_output.is_dir():
+			os.mkdir('GSE26230/output')
+		if not Path('GSE26230/output/Preprocessed').is_dir():
+			os.mkdir('GSE26230/output/Preprocessed')
+		if not Path('GSE26230/output/Seq_map').is_dir():
+			os.mkdir('GSE26230/output/Seq_map')
+		if not Path('GSE26230/output/Counts').is_dir():
+			os.mkdir('GSE26230/output/Counts')
+		GSE26230_flags = Path('GSE26230/flags')
+		if not GSE26230_flags.is_dir():
+			os.mkdir('GSE26230/flags')
+
+rule rename_txt_to_fastq:
+	input:
+		'GSE26230/folder_flag.done'
+	output:
+		touch('GSE26230/flags/renaming.done')
+	run:
+		import os
+		files_list =[]
+
+		fastq_folder=os.path.dirname('GSE26230/')
+		for file in os.listdir(os.path.join(os.getcwd(),fastq_folder)):
+			if file.endswith(".txt"):
+				files_list.append(file)
+
+		for txt_file in files_list:
+			fastq=txt_file[:-3]
+			shell('mv {fastq_folder}/{txt_file} {fastq_folder}/{fastq}.fastq')
+
+rule fastqc:
+	input:
+		'GSE26230/flags/renaming.done'
+	output:
+		touch('GSE26230/flags/fastqc.done')
+	run:
+		import os
+		fastq_folder=os.path.dirname('GSE26230/')
+		for file in os.listdir(os.path.join(os.getcwd(),fastq_folder)):
+			if file.endswith(".fastq"):
+				shell('GSE26230/FastQC/fastqc {fastq_folder}/{file}')
+
+rule fastq_to_fasta:
+	input:
+		'GSE26230/flags/renaming.done'
+	output:
+		touch('GSE26230/flags/to_fasta.done')
+	run:
+		import os
+		files_list =[]
+		fastq_folder=os.path.dirname('GSE26230/')
+
+		for file in os.listdir(os.path.join(os.getcwd(),fastq_folder)):
+			if file.endswith(".fastq"):
+				files_list.append(file)
+		for fastq in files_list:
+			GSM=fastq[:9]
+			shell('cutadapt -o GSE26230/output/{GSM}.fasta {fastq_folder}/{fastq}')
+
+rule edit_fasta_to_usual_format:
+#sed "s/[a-z]/N/g" was necessary, as fastxtoolkit doesnt do well with soft masking
+	input:
+		'GSE26230/flags/to_fasta.done'
+	output:
+		touch('GSE26230/flags/formatting.done')
+	run:
+		import os
+		files_list =[]
+		fasta_folder=os.path.dirname('GSE26230/output/')
+		for file in os.listdir(os.path.join(os.getcwd(),fasta_folder)):
+			if file.endswith(".fasta"):
+				files_list.append(file)
+		for fasta in files_list:
+			GSM=fasta[:-6]
+			shell('less {fasta_folder}/{fasta} | sed "s/[a-z]/N/g" | fastx_collapser | sed "s/-/_/g ; s/_/_{GSM}_/" | fastx_artifacts_filter -v > {fasta_folder}/Preprocessed/{GSM}_final_col_filter.fasta')
+
+rule sequential_mapping:
+	input:
+		'GSE26230/flags/formatting.done'
+	output:
+		touch('GSE26230/flags/Sequential_mapping.done')
+	run:
+		import os
+		bt_prefix_list=[]
+		bt_index_folder='Index_gen/Repeat_Masker/modified_bed/fasta/bt_indexes/'
+		for file in os.listdir(os.path.join(os.getcwd(),bt_index_folder)):
+			if file.endswith(".rev.1.ebwt"):
+				bt_prefix_list.append(file[:-11])
+		def sort_index(elem):
+			return int(elem[5:])
+		bt_prefix_list.sort(key=sort_index)
+		files_list=[]
+		prepro_fasta_folder=os.path.dirname('GSE26230/output/Preprocessed/')
+		seq_map_folder=os.path.dirname('GSE26230/output/Seq_map/')
+		for file in os.listdir(prepro_fasta_folder):
+			if file.endswith(".fasta"):
+				files_list.append(file)
+		for fasta in files_list:
+			GSM=fasta[:-23]
+			for i in range(len(bt_prefix_list)):
+				Index=bt_prefix_list[i]
+				Previously_unmapped=bt_prefix_list[i-1]
+				if i ==0:
+					shell('bowtie -f --un {seq_map_folder}/{GSM}_unmapped_{Index}.fasta --al {seq_map_folder}/{GSM}_mapped_{Index}.fasta -v 0 -p 1 -t {bt_index_folder}/{Index} {prepro_fasta_folder}/{fasta} > {seq_map_folder}/{GSM}_mapped{Index}.bowtie.txt')
+				elif i ==1:
+					shell('bowtie -f --un {seq_map_folder}/{GSM}_unmapped_{Index}.fasta -v 0 -p 1 -t {bt_index_folder}/{Index} {seq_map_folder}/{GSM}_mapped_Index0.fasta > {seq_map_folder}/{GSM}_mapped{Index}.bowtie.txt')
+				else:
+					shell('bowtie -f --un {seq_map_folder}/{GSM}_unmapped_{Index}.fasta -v 0 -p 1 -t {bt_index_folder}/{Index} {seq_map_folder}/{GSM}_unmapped_{Previously_unmapped}.fasta > {seq_map_folder}/{GSM}_mapped{Index}.bowtie.txt')
+
+rule count_by_lib:
+	input:
+		'GSE26230/flags/Sequential_mapping.done'
+	output:
+		touch('GSE26230/flags/Count_Sequential_mapping.done'),
+		'GSE26230/output/Counts/count.txt'
+	run:
+		import os
+		import pandas as pd
+		Full_list=[]
+		seq_map_folder=os.path.dirname('GSE26230/output/Seq_map/')
+		for file in os.listdir(seq_map_folder):
+			if file.endswith(".bowtie.txt"):
+				Full_list.append(file)
+
+		out_text_file=open('GSE26230/output/Counts/count.txt',"a")
+		for i in Full_list:	
+			if os.path.getsize(os.path.join(seq_map_folder,i))<=0:
+				continue
+			else:
+				everything = pd.read_csv(os.path.join(seq_map_folder,i),sep="\t+",header=None)
+				def count_one(x):
+					return int(x.split("_",3)[2])
+				def sum_all(everything):
+					counter=0
+					for i in range(len(everything)):
+						counter+=count_one(everything[0][i])
+					return counter
+				out_text_file.write('\n'+i+'\t'+str(sum_all(everything)))
+		out_text_file.close()
+
+rule count_to_graph_R_GSE26230:
+	input:
+		'GSE26230/output/Counts/count.txt',
+		'GSE26230/flags/Count_Sequential_mapping.done'
+	output:
+		'GSE26230/output/Counts/count.png',
+		touch('GSE26230/flags/Count_to_graph.done')
+	script:
+		"Input_files/R_scripts/Count_to_graph_1_GSE26230.R"
+
+#rule count_to_graph_R_2:
+#	input:
+#		'Seq_map_directory/count.txt',
+#		'Spike_in_folder/Output/Spike_in_count.txt',
+#		'spike_in_count.done'
+#	output:
+#		'Seq_map_directory/count2.png'
+#	script:
+#		"Input_files/R_scripts/Count_to_graph_2.R"
+
+# df1 = data[data.index % 3 != 2]
+#fasta_formatter -t -i minitest.txt > minitest.tab
+# import pandas as pd
+# data = pd.read_table('minitest.tab', sep='\t', header =None)
+#letters=lambda x: ''.join(c for c in x if c.isalpha())
+#filter_mfe=lambda x: float(x[-6:-1])>-0.50
+
+#out_text_file=open('test_out.txt',"a")
+#for i in range(len(data)):
+#	if filter_mfe(data[1][i]):
+#		out_text_file.write('>'+str(data[0][i])+'\n'+letters(data[1][i])+'\n')
+#out_text_file.close()
+
