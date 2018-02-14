@@ -1,0 +1,378 @@
+#install 
+# gffutils in python env
+
+rule all:
+	input:
+		'index_generation/flags/bt_indexes.done',
+#		'index_generation/folder_flag.done',
+#		'index_generation/flags/gff_db.done',
+#		'index_generation/output/gff/temp.gff.db',
+#		'index_generation/flags/gff_to_feature_types.done',
+#		'index_generation/flags/gff_to_bed.done',
+#		'index_generation/flags/exon_merged_bed.done',
+#		'index_generation/flags/cisnat.done',
+#		'index_generation/flags/Repeat_Masker_runstep.done'
+
+rule make_folders:
+	output:
+		touch('index_generation/folder_flag.done')
+	run:
+		import os
+		from pathlib import Path
+		index_generation_flags = Path('Input_files/Flybase_downloads/')
+		if not index_generation_flags.is_dir():
+			os.mkdir('Input_files/Flybase_downloads/')
+		index_generation_output = Path('index_generation/output')
+		if not index_generation_output.is_dir():
+			os.mkdir('index_generation/output')
+		if not Path('index_generation/output/gff').is_dir():
+			os.mkdir('index_generation/output/gff')
+			os.mkdir('index_generation/output/raw_bed')
+			os.mkdir('index_generation/output/merge_bed')
+			os.mkdir('index_generation/output/final_index_bed')
+		if not Path('index_generation/output/RepeatMasker').is_dir():
+			os.mkdir('index_generation/output/RepeatMasker')
+			os.mkdir('index_generation/output/RM_bed')
+			os.mkdir('index_generation/output/fasta')
+			os.mkdir('index_generation/output/bt_indexes')
+		index_generation_flags = Path('index_generation/flags')
+		if not index_generation_flags.is_dir():
+			os.mkdir('index_generation/flags')
+
+rule download_files_from_flybase:
+		output:
+			touch('index_generation/flags/download_from_flybase.done')
+		params:
+			folder='Input_files/Flybase_downloads/'
+		run:
+			import os
+			if not os.path.isfile('Input_files/Flybase_downloads/dmel-all-r6.19.gff'):
+				shell('wget -N ftp://ftp.flybase.net/genomes/Drosophila_melanogaster/dmel_r6.19_FB2017_06/gff/dmel-all-r6.19.gff.gz -P {params.folder}')
+			if not os.path.isfile('dmel-all-chromosome-r6.19.fasta'):
+				shell('wget -N ftp://ftp.flybase.net/genomes/Drosophila_melanogaster/dmel_r6.19_FB2017_06/fasta/dmel-all-chromosome-r6.19.fasta.gz -P {params.folder}')
+			shell('gzip -d ./{params.folder}/*.gz')
+
+rule make_gff_database_from_gff:
+	input:
+		'index_generation/folder_flag.done',
+		'index_generation/flags/download_from_flybase.done'
+	output:
+		touch('index_generation/flags/gff_db.done'),
+		'index_generation/output/gff/temp.gff.db'
+	run:
+		import os
+		import pandas as pd
+		import gffutils
+
+
+		in_gff = 'Input_files/Flybase_downloads/dmel-all-r6.19.gff'
+
+		if not os.path.isfile('index_generation/output/gff/temp.gff.db'):
+			r619_db = gffutils.create_db(in_gff, dbfn='index_generation/output/gff/temp.gff.db', force=True, keep_order=False, merge_strategy='merge', sort_attribute_values=False)
+
+rule extract_flybase_gff_to_feature_types_bed:
+	input:
+		'index_generation/flags/gff_db.done',
+		'index_generation/output/gff/temp.gff.db'
+	output:
+		touch('index_generation/flags/gff_to_feature_types.done')
+	params:
+		grep='Name=hpRNA'
+
+	run:
+		import os
+		import pandas as pd
+		import gffutils
+		import sys
+
+		#head -c 20MB Input_files/Flybase_downloads/dmel-all-r6.18.gff > Input_files/Flybase_downloads/short-dmel-all-r6.18.gff,
+		in_gff = 'Input_files/Flybase_downloads/dmel-all-r6.19.gff'
+		r619_db = gffutils.FeatureDB('index_generation/output/gff/temp.gff.db', keep_order=False)
+
+		feature_types=['exon','rRNA','RNA','tRNA','snRNA','snoRNA','pseudogene','pre_miRNA','mRNA', 'ncRNA','transposable_element']
+		
+		out_text_file=open('index_generation/output/gff/gff_features_info',"w")
+		for i in list(r619_db.featuretypes()):
+			out_text_file.write(str(i)+'\t'+ str(r619_db.count_features_of_type(i))+'\n')
+		out_text_file.close()
+
+		out_text_file=open('gff_features_info',"w")
+		for i in list(r619_db.featuretypes()):
+			if i in feature_types:
+				sys.stdout = open('index_generation/output/gff/r619_'+str(i)+'.gff',"w")
+				for j in r619_db.features_of_type(i):
+					print(j)
+				sys.stdout.close()
+		Feature='hpRNA'
+		shell('grep {params.grep} {in_gff}> index_generation/output/gff/r618_{Feature}.gff')
+
+rule gff_to_bed_using_gff2bed:
+	input:
+		'index_generation/flags/gff_to_feature_types.done'
+	output:
+		touch('index_generation/flags/gff_to_bed.done')
+	run:
+		import os
+		gff_dir='index_generation/output/gff'
+		bed_dir='index_generation/output/raw_bed'
+		gff_list=[]
+		for file in os.listdir(os.path.join(os.getcwd(),gff_dir)):
+			if file.endswith(".gff"):
+				gff_list.append(file)
+		for gff in gff_list:
+			in_gff=os.path.join(gff_dir,gff)
+			out_bed=os.path.join(bed_dir,gff[5:-4])
+			shell('gff2bed < {in_gff} > {out_bed}.bed')
+
+rule making_exon_merged_bed:
+	input:
+		'index_generation/flags/gff_to_bed.done'
+	output:
+		touch('index_generation/flags/exon_merged_bed.done')
+	params:
+		merged_bed_dir='index_generation/output/merge_bed'
+	run:
+		import os
+		bed_dir='index_generation/output/raw_bed'
+		merge_bed_dir='index_generation/output/merge_bed'
+		final_index_bed_dir='index_generation/output/final_index_bed'
+		bed_list=[]
+		for file in os.listdir(os.path.join(os.getcwd(),bed_dir)):
+			if file.endswith(".bed"):
+				bed_list.append(file)
+		exon=os.path.join(bed_dir,'exon.bed')
+		exon_temp=os.path.join(merge_bed_dir,'tempo.bed')
+		shell('bedtools sort -i {exon} > {exon_temp}')
+		
+		for bed in bed_list:
+			feature=bed[:-4]
+			origin=os.path.join(bed_dir,bed)
+			destination=os.path.join(final_index_bed_dir,bed)
+			destination2=os.path.join(merge_bed_dir,'exon_'+bed)
+			if feature =='hpRNA':
+				shell('bedtools sort -i {origin} > {destination}')
+			elif feature =='transposable_element':
+				shell('bedtools sort -i {origin} > {destination}')
+			elif feature =='exon':
+				continue
+			elif feature =='pre_miRNA':
+				shell('bedtools sort -i {origin} > {destination}')
+			else:
+				temp_file=os.path.join(merge_bed_dir,bed)+'.temp.bed'
+				shell('bedtools sort -i {origin} > {temp_file}')
+				merge_temp=temp_file+'merged.temp.bed'
+				shell('bedtools intersect -s -a {temp_file} -b {exon_temp} > {merge_temp}')
+				shell('bedtools sort -i {merge_temp} > {destination2}')
+				#shell('bedtools merge -c 4 -o distinct -i {temp_file} >{destination2}')
+				shell('rm {params.merged_bed_dir}/*.temp.bed')
+		shell('rm {params.merged_bed_dir}/tempo.bed')
+
+#somthing's wrong with the cisnatbed
+rule making_cis_nat_bed_and_move_files:
+	input:
+		'index_generation/flags/exon_merged_bed.done'
+	output:
+		touch('index_generation/flags/cisnat.done')
+	params:
+		merged_bed_dir='index_generation/output/merge_bed',
+		final_index_bed_dir='index_generation/output/final_index_bed'
+	run:
+		import os
+		bed_dir='index_generation/output/raw_bed'
+		merge_bed_dir='index_generation/output/merge_bed'
+		final_index_bed_dir='index_generation/output/final_index_bed'
+		bed_list=[]
+		spare_list=[]
+		feature_list=['mRNA','ncRNA','tRNA','snoRNA','pseudogene']
+		other_list=['rRNA','tRNA','snRNA','snoRNA']
+		for file in os.listdir(os.path.join(os.getcwd(),merge_bed_dir)):
+			feature=file[5:-4]
+			if feature in feature_list:
+				bed_list.append(file)
+			if feature in other_list:
+				spare_list.append(file)
+		mRNA=os.path.join(merge_bed_dir,'exon_mRNA.bed')
+		mRNA_temp=os.path.join(final_index_bed_dir,'mRNA_tempo.bed')
+		shell('bedtools sort -i {mRNA}> {mRNA_temp}')
+		for bed in bed_list:
+			feature=bed[:-4]
+			origin=os.path.join(merge_bed_dir,bed)
+			destination2=os.path.join(final_index_bed_dir,'mRNA_'+bed)
+			temp_file=origin+'.temp.bed'
+			shell('bedtools sort -i {origin} > {temp_file}')
+			merge_temp=temp_file+'merged.temp.bed'
+			shell('bedtools intersect -S -a {mRNA_temp} -b {temp_file} > {merge_temp}')
+			shell('bedtools sort -i {merge_temp} > {temp_file}')
+			shell('bedtools merge -c 4 -o distinct -i {temp_file} > {destination2}')
+			shell('rm {params.merged_bed_dir}/*.temp.bed')
+		shell('rm {params.final_index_bed_dir}/mRNA_tempo.bed')
+		for bed in spare_list:
+			origin=os.path.join(merge_bed_dir,bed)
+			destination3=os.path.join(final_index_bed_dir,bed)	
+			shell('bedtools sort -i {origin} > {destination3}')
+
+rule repeatMasker_build:
+	input:
+		'index_generation/folder_flag.done'
+		#download the file from flybase server
+	output:
+		touch('index_generation/flags/Repeat_Masker_runstep.done')
+	run:
+		RM_source='/usr/local/RepeatMasker/RepeatMasker'
+		RM_dir='index_generation/output/RepeatMasker'
+		genome='Input_files/Flybase_downloads/dmel-all-chromosome-r6.19.fasta'
+		shell('{RM_source} -dir {RM_dir} -species drosophila {genome}') 
+	
+
+#rule extract_bed_from_RM_out:
+	
+#	run:
+#		names = list(range(0,15)
+#		everything = pd.read_table('Index0.fa.out',delim_whitespace=True, usecols=names,engine='python',index_col=15)
+#		too much hassle too much error to rewrite
+
+rule extract_bed_from_RMout: 
+#makes modified bedfiles chr start stop
+#awk command obtained from https://www.biostars.org/p/128068/
+	input:
+		'index_generation/flags/Repeat_Masker_runstep.done'
+	output:
+		touch('index_generation/flags/Repeatmasker_out_to_bed.done')
+	params:
+		RMout2bed='Input_files/Awk_scripts/RMout2bed.awk'
+	run:
+		RM_out='index_generation/output/RepeatMasker/dmel-all-chromosome-r6.19.fasta.out'
+		RM_bed_dir='index_generation/output/RM_bed/'
+		shell('awk -f {params.RMout2bed} {RM_out} > {RM_bed_dir}RM_output.bed')
+
+rule get_features_from_RMbed_using_pandas_part1:
+	input:
+		'index_generation/flags/Repeatmasker_out_to_bed.done'
+#part 1 extract RNA out first, part2 then from RNA, extract tRNA, etc...
+	output: 
+		touch('index_generation/flags/features_from_RM_bed_1.done')
+	run:
+		import pandas as pd
+		import os
+
+		bedfile = 'index_generation/output/RM_bed/RM_output.bed'
+
+		everything = pd.read_csv(bedfile,sep="\t+",header=None)
+		RM_Genetype	=['LTR','LINE','DNA','Satellite','Low_complexity','RC','Simple_repeat','Other','Unknown','ARTEFACT','RNA','rRNA','tRNA']
+		for genetype in RM_Genetype:
+			out_dir = "index_generation/output/RM_bed/"
+			out_file = genetype +"RM.bed"
+			something = everything[everything.iloc[:,3].str.contains(genetype)]
+			something.to_csv(os.path.join(out_dir, out_file),sep='\t',index=False)
+		
+#might cause a bug
+
+rule get_features_from_RMbed_using_pandas_part2:
+	input:
+		'index_generation/flags/features_from_RM_bed_1.done'
+#part 2 remove tRNA and rRNA
+	output:
+		touch('index_generation/flags/features_from_RM_bed_2.done')
+	run:
+		import pandas as pd
+		import os
+		bedfile = 'index_generation/output/RM_bed/RNARM.bed'
+		everything = pd.read_csv(bedfile ,sep="\t+",header=None)
+		out_dir = "index_generation/output/RM_bed/"
+		out_file = "RNAonlyRM.bed"
+		rRNA = everything[everything.iloc[:,3].str.contains('rRNA')]
+		tRNA = everything[everything.iloc[:,3].str.contains('tRNA')]
+		something = pd.concat([everything,rRNA,tRNA]).drop_duplicates(keep=False)
+		something.to_csv(os.path.join(out_dir, out_file),sep='\t',index=False, header=False)
+
+rule move_bed_files_to_final_index_bed:
+	input:
+		'index_generation/flags/features_from_RM_bed_2.done'
+	output:
+		touch('index_generation/flags/move_RM_bed.done')
+	run:
+		import os
+		bed_list=[]
+		RM_bed_dir='index_generation/output/RM_bed/'
+		cit_bed_files_folder='Input_files/Citation_Index/'
+		cite_bed_list=[]
+		final_index_bed_dir='index_generation/output/final_index_bed/'
+		for file in os.listdir(os.path.join(os.getcwd(),RM_bed_dir)):
+			if file.endswith("RM.bed"):
+				bed_list.append(file)
+		bed_list.remove('RNARM.bed')
+		for file in os.listdir(os.path.join(os.getcwd(),cit_bed_files_folder)):
+			if file.endswith(".bed"):
+				cite_bed_list.append(file)
+		for files in bed_list:
+			shell('cp {RM_bed_dir}{files} {final_index_bed_dir}{files}')
+		for files in cite_bed_list:
+			shell('cp {cit_bed_files_folder}{files} {final_index_bed_dir}{files}')
+
+rule bed_to_fasta:
+	input:
+		'index_generation/flags/cisnat.done',
+		'index_generation/flags/move_RM_bed.done'
+	output:
+		touch('index_generation/flags/bed_to_fasta.done')
+	run:
+		import os
+		from pathlib import Path
+		
+		genome='Input_files/Flybase_downloads/dmel-all-chromosome-r6.19.fasta'
+		final_index_bed_dir='index_generation/output/final_index_bed/'
+		out_fasta_dir='index_generation/output/fasta/'
+		bed_files=[]
+		for file in os.listdir(os.path.join(os.getcwd(),final_index_bed_dir)):
+			if file.endswith(".bed"):
+				bed_files.append(file)
+		for i in range(len(bed_files)):
+			bed_file=os.path.join(final_index_bed_dir,bed_files[i])
+			out_file=os.path.join(out_fasta_dir,bed_files[i][:-4]+'.fa')
+			shell('bedtools getfasta -name -fi {genome} -bed {bed_file} -fo {out_file}')
+
+#install eutils https://www.ncbi.nlm.nih.gov/books/NBK179288/
+#this is buggy/ do it outside conda env
+#esearch -db nucleotide -query M21017.1 | efetch -format fasta > index_generation/output/fasta/chr1dmerdna.fa
+rule download_M21017_1_fasta:
+	input:
+		'index_generation/folder_flag.done'
+	output:
+		touch('index_generation/flags/download_fasta.done')
+	params:
+		M21017_1='M21017.1'	
+	run:
+		import os 
+		fasta_dir='index_generation/output/fasta/'
+		if not os.path.isfile(os.path.join(fasta_dir,'chr1dmerdna.fa')):
+			shell('export PATH=${PATH}:/home/User/edirect')
+			shell('esearch -db nucleotide -query {params.M21017_1} | efetch -format fasta > {fasta_dir}chr1dmerdna.fa')
+
+rule make_bt_indexes:
+	input:
+		'index_generation/flags/bed_to_fasta.done',
+		'index_generation/flags/download_fasta.done'
+	output:
+		touch('index_generation/flags/bt_indexes.done')
+	run:
+		import os
+		fasta_folder='index_generation/output/fasta/'
+		genome='Input_files/Flybase_downloads/dmel-all-chromosome-r6.19.fasta'	
+		if not os.path.isfile(os.path.join(fasta_folder,'dmel-all-chromosome-r6.19.fasta')):
+			shell('cp {genome} {fasta_folder}/dmel-all-chromosome-r6.19.fa')
+		fasta_file_path=[]
+		for file in os.listdir(os.path.join(os.getcwd(),fasta_folder)):
+			if file.endswith(".fa"):
+				fasta_file_path.append(file)
+		rename_dict={'dmel-all-chromosome-r6.19.fa':'Index0','rRNARM.fa':'Index1','exon_rRNA.fa':'Index2','chr1dmerdna.fa':'Index3',\
+		'RNAonlyRM.fa':'Index4','exon_tRNA.fa':'Index5','exon_snRNA.fa':'Index6','exon_snoRNA.fa':'Index7',\
+		'pre_miRNA.fa':'Index8','hpRNA.fa':'Index9','LTRRM.fa':'Index10','LINERM.fa':'Index11','DNARM.fa':'Index12',\
+		'SatelliteRM.fa':'Index13','Low_complexityRM.fa':'Index14','RCRM.fa':'Index15','Simple_repeatRM.fa':'Index16',\
+		'OtherRM.fa':'Index17','UnknownRM.fa':'Index18','transposable_element.fa':'Index19','ARTEFACTRM.fa':'Index20',\
+		'01_okamura_DM6.fa':'Index21','02_czech_DM6.fa':'Index22','03_kawamura_DM6.fa':'Index23','04_ghildiyal_DM6.fa':'Index24','05_CR14033_DM6.fa':'Index25',\
+		'mRNA_exon_mRNA.fa':'Index26','mRNA_exon_ncRNA.fa':'Index27','mRNA_exon_tRNA.fa':'Index28',\
+		'mRNA_exon_snoRNA.fa':'Index29','mRNA_exon_pseudogene.fa':'Index30'}
+		for file in fasta_file_path:
+			if file in rename_dict:
+				prefix=os.path.join('index_generation/output/bt_indexes',rename_dict[file])
+				shell('bowtie-build {fasta_folder}{file} {prefix}')
