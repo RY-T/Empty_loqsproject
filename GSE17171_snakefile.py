@@ -64,7 +64,8 @@ rule csv_to_fasta:
 						else:
 							fasta_name=str(line+counter+1)+'_'+i+'_'+str(data['READS'].iloc[line])
 						fasta_seq=str(data['SEQ'].iloc[line])
-						text_file.write((">{}\n{}\n".format(fasta_name,fasta_seq)))
+						if len(fasta_seq)>=18:
+							text_file.write((">{}\n{}\n".format(fasta_name,fasta_seq)))
 					counter=len(data)
 				else:
 					counter=0
@@ -78,7 +79,7 @@ rule sequential_mapping:
 	run:
 		import os
 		bt_prefix_list=[]
-		bt_index_folder='Index_gen/Repeat_Masker/modified_bed/fasta/bt_indexes/'
+		bt_index_folder='index_generation/output/bt_indexes/'
 		for file in os.listdir(os.path.join(os.getcwd(),bt_index_folder)):
 			if file.endswith(".rev.1.ebwt"):
 				bt_prefix_list.append(file[:-11])
@@ -97,11 +98,11 @@ rule sequential_mapping:
 				Index=bt_prefix_list[i]
 				Previously_unmapped=bt_prefix_list[i-1]
 				if i ==0:
-					shell('bowtie -f --un {seq_map_folder}/{GSM}_unmapped_{Index}.fasta --al {seq_map_folder}/{GSM}_mapped_{Index}.fasta -v 0 -p 1 -t {bt_index_folder}/{Index} {prepro_fasta_folder}/{fasta} > {seq_map_folder}/{GSM}_mapped{Index}.bowtie.txt')
+					shell('bowtie -f --un {seq_map_folder}/{GSM}_unmapped_{Index}.fasta --al {seq_map_folder}/{GSM}_mapped_{Index}.fasta -v 2 --best -t {bt_index_folder}/{Index} {prepro_fasta_folder}/{fasta} > {seq_map_folder}/{GSM}_mapped{Index}.bowtie.txt')
 				elif i ==1:
-					shell('bowtie -f --un {seq_map_folder}/{GSM}_unmapped_{Index}.fasta -v 0 -p 1 -t {bt_index_folder}/{Index} {seq_map_folder}/{GSM}_mapped_Index0.fasta > {seq_map_folder}/{GSM}_mapped{Index}.bowtie.txt')
+					shell('bowtie -f --un {seq_map_folder}/{GSM}_unmapped_{Index}.fasta -v 2 --best -t {bt_index_folder}/{Index} {seq_map_folder}/{GSM}_mapped_Index0.fasta > {seq_map_folder}/{GSM}_mapped{Index}.bowtie.txt')
 				else:
-					shell('bowtie -f --un {seq_map_folder}/{GSM}_unmapped_{Index}.fasta -v 0 -p 1 -t {bt_index_folder}/{Index} {seq_map_folder}/{GSM}_unmapped_{Previously_unmapped}.fasta > {seq_map_folder}/{GSM}_mapped{Index}.bowtie.txt')
+					shell('bowtie -f --un {seq_map_folder}/{GSM}_unmapped_{Index}.fasta -v 2 --best -t {bt_index_folder}/{Index} {seq_map_folder}/{GSM}_unmapped_{Previously_unmapped}.fasta > {seq_map_folder}/{GSM}_mapped{Index}.bowtie.txt')
 
 rule count_by_lib:
 	input:
@@ -121,9 +122,9 @@ rule count_by_lib:
 		out_text_file=open('GSE17171/output/Counts/count.txt',"a")
 		for i in Full_list:	
 			if os.path.getsize(os.path.join(seq_map_folder,i))<=0:
-				continue
+				out_text_file.write('\n'+i+'\t'+str(0))
 			else:
-				everything = pd.read_csv(os.path.join(seq_map_folder,i),sep="\t+",header=None)
+				everything = pd.read_csv(os.path.join(seq_map_folder,i),sep="\t+",header=None,index_col=False, usecols=[0,1,2,3,4,5,6])
 				def count_one(x):
 					return int(x.split("_",3)[2])
 				def sum_all(everything):
@@ -134,15 +135,52 @@ rule count_by_lib:
 				out_text_file.write('\n'+i+'\t'+str(sum_all(everything)))
 		out_text_file.close()
 
+rule count_unmapped_by_lib:
+	input:
+		'GSE17171/flags/Sequential_mapping.done'
+	output:
+		touch('GSE17171/flags/Count_Sequential_mapping_unmapped.done'),
+		'GSE17171/output/Counts/unmapped_count.txt'
+	run:
+		import os
+		import pandas as pd
+		Full_list=[]
+		seq_map_folder=os.path.dirname('GSE17171/output/Seq_map/')
+		for file in os.listdir(seq_map_folder):
+			if file.endswith("unmapped_Index0.fasta"):
+				Full_list.append(file)
+
+		out_text_file=open('GSE17171/output/Counts/unmapped_count.txt',"a")
+		for i in Full_list:	
+			if os.path.getsize(os.path.join(seq_map_folder,i))<=0:
+				continue
+			else:
+				everything = pd.read_csv(os.path.join(seq_map_folder,i),sep="\t+",header=None)
+				def count_one(x):
+					return int(x.split("_",3)[2])
+				def sum_all(everything):
+					counter=0
+					for i in range(0,len(everything),2):
+						counter+=count_one(everything[0][i])
+					return counter
+				out_text_file.write('\n'+i+'\t'+str(sum_all(everything)))
+		out_text_file.write('\n')
+		out_text_file.close()
+
 rule count_to_graph_R_GSE17171:
 	input:
 		'GSE17171/output/Counts/count.txt',
-		'GSE17171/flags/Count_Sequential_mapping.done'
+		'GSE17171/output/Counts/unmapped_count.txt',
+		'GSE17171/flags/Count_Sequential_mapping.done',
+		'GSE17171/flags/Count_Sequential_mapping_unmapped.done'
 	output:
 		'GSE17171/output/Counts/count.png',
+		'GSE17171/output/Counts/Reads_mapped.png',
+		'GSE17171/output/Counts/percentage_per_lib.png',
 		touch('GSE17171/flags/Count_to_graph.done')
 	script:
-		"Input_files/R_scripts/Count_to_graph_1_GSE17171.R"
+		"Input_files/R_scripts/Universal_count_to_graph_ggplot.R"
+
 
 #rule count_to_graph_R_2:
 #	input:

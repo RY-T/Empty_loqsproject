@@ -5,6 +5,7 @@ rule all:
 	input:
 		'GSE37443/folder_flag.done',
 		'GSE37443/flags/to_fasta.done',
+		'GSE37443/flags/to_final_pre_processed_fasta.done',
 		'GSE37443/flags/Sequential_mapping.done',
 		'GSE37443/flags/Count_Sequential_mapping.done',
 		'GSE37443/output/Counts/count.txt',
@@ -21,6 +22,7 @@ rule make_folders:
 			os.mkdir('GSE37443/output')
 		if not Path('GSE37443/output/Preprocessed').is_dir():
 			os.mkdir('GSE37443/output/Preprocessed')
+			os.mkdir('GSE37443/output/Final_Preprocessed')
 		if not Path('GSE37443/output/Seq_map').is_dir():
 			os.mkdir('GSE37443/output/Seq_map')
 		if not Path('GSE37443/output/Counts').is_dir():
@@ -45,16 +47,48 @@ rule csv_to_fasta:
 		for file in os.listdir(os.path.join(os.getcwd(),csv_folder)):
 			if file.endswith(".txt"):
 				files_list.append(file)
+		remove_dot='.'
 
 		for i in files_list:
 			lib=i[:9]		
 			text_file = open('GSE37443/output/Preprocessed/'+lib+'.fasta',"w")
 			data = pd.read_csv(os.path.join(csv_folder,i), sep='\t', header=None)
 			for line in range(len(data)):
-				fasta_name=str(line+1)+'_'+lib+'_'+str(data.iloc[line][1])
-				fasta_seq=str(data.iloc[line][0])
-				text_file.write((">{}\n{}\n".format(fasta_name,fasta_seq)))
+				fasta_seq,fasta_name=str(data.iloc[line][0]),'_'+str(data.iloc[line][1])
+				if not remove_dot in fasta_seq:
+					text_file.write((">{}\n{}\n".format(fasta_name,fasta_seq)))
 			text_file.close()
+
+rule fasta_adaptor_trimming:
+#collapse mapped reads and unmap reads into the same library, change format of csv to common fasta format
+	input:
+		'GSE37443/flags/to_fasta.done'
+	output:
+		touch('GSE37443/flags/to_final_pre_processed_fasta.done')
+	run:
+		import os
+		
+		files_list =[]
+		fasta_folder=os.path.dirname('GSE37443/output/Preprocessed/')
+		output_folder=os.path.dirname('GSE37443/output/Final_Preprocessed/')
+		for file in os.listdir(os.path.join(os.getcwd(),fasta_folder)):
+			if file.endswith(".fasta"):
+				files_list.append(file)
+		adapter='TCGTATGCCGTCTTCTGCTTG'
+		for i in files_list:
+			lib=i[:9]
+			shell('fastx_clipper -a {adapter} -l 18 -c -i {fasta_folder}/{lib}.fasta | sed "s/^>_/>-/"| \
+				fastx_uncollapser | fastx_collapser | sed "s/-/_/g ; s/_/_{lib}_/" > {output_folder}/{lib}.fasta')
+
+#keep >18 and only cut sequences
+
+#fastx_clipper -a TCGTATGCCGTCTTCTGCTTG -l 18 -i GSM919406.fasta | head | fastx_collapser -v 
+#CCGAAGG
+#fastx_clipper -a TCGGACTGTAGAACTCTGAACCTGTCGGTGGTCGCCGTATCATT -l 18 -i dummy.fasta | head
+#forward primer AATGATACGGCGACCACCGACAGGTTCAGAGTTCTACAGTCCGA
+#rule filtered_fasta
+
+#fastx_clipper -a TCGTATGCCGTCTTCTGCTTG -l 18 -i GSM919406.fasta | head | sed "s/^>_/>-/"| fastx_uncollapser | fastx_collapser | sed "s/-/_/g ; s/_/_LIB_/" > out.fasta
 
 rule sequential_mapping:
 	input:
@@ -64,7 +98,7 @@ rule sequential_mapping:
 	run:
 		import os
 		bt_prefix_list=[]
-		bt_index_folder='Index_gen/Repeat_Masker/modified_bed/fasta/bt_indexes/'
+		bt_index_folder='index_generation/output/bt_indexes/'
 		for file in os.listdir(os.path.join(os.getcwd(),bt_index_folder)):
 			if file.endswith(".rev.1.ebwt"):
 				bt_prefix_list.append(file[:-11])
@@ -72,7 +106,7 @@ rule sequential_mapping:
 			return int(elem[5:])
 		bt_prefix_list.sort(key=sort_index)
 		files_list=[]
-		prepro_fasta_folder=os.path.dirname('GSE37443/output/Preprocessed/')
+		prepro_fasta_folder=os.path.dirname('GSE37443/output/Final_Preprocessed/')
 		seq_map_folder=os.path.dirname('GSE37443/output/Seq_map/')
 		for file in os.listdir(prepro_fasta_folder):
 			if file.endswith(".fasta"):
@@ -83,11 +117,11 @@ rule sequential_mapping:
 				Index=bt_prefix_list[i]
 				Previously_unmapped=bt_prefix_list[i-1]
 				if i ==0:
-					shell('bowtie -f --un {seq_map_folder}/{GSM}_unmapped_{Index}.fasta --al {seq_map_folder}/{GSM}_mapped_{Index}.fasta -v 0 -p 1 -t {bt_index_folder}/{Index} {prepro_fasta_folder}/{fasta} > {seq_map_folder}/{GSM}_mapped{Index}.bowtie.txt')
+					shell('bowtie -f --un {seq_map_folder}/{GSM}_unmapped_{Index}.fasta --al {seq_map_folder}/{GSM}_mapped_{Index}.fasta -v 2 --best -t {bt_index_folder}/{Index} {prepro_fasta_folder}/{fasta} > {seq_map_folder}/{GSM}_mapped{Index}.bowtie.txt')
 				elif i ==1:
-					shell('bowtie -f --un {seq_map_folder}/{GSM}_unmapped_{Index}.fasta -v 0 -p 1 -t {bt_index_folder}/{Index} {seq_map_folder}/{GSM}_mapped_Index0.fasta > {seq_map_folder}/{GSM}_mapped{Index}.bowtie.txt')
+					shell('bowtie -f --un {seq_map_folder}/{GSM}_unmapped_{Index}.fasta -v 2 --best -t {bt_index_folder}/{Index} {seq_map_folder}/{GSM}_mapped_Index0.fasta > {seq_map_folder}/{GSM}_mapped{Index}.bowtie.txt')
 				else:
-					shell('bowtie -f --un {seq_map_folder}/{GSM}_unmapped_{Index}.fasta -v 0 -p 1 -t {bt_index_folder}/{Index} {seq_map_folder}/{GSM}_unmapped_{Previously_unmapped}.fasta > {seq_map_folder}/{GSM}_mapped{Index}.bowtie.txt')
+					shell('bowtie -f --un {seq_map_folder}/{GSM}_unmapped_{Index}.fasta -v 2 --best -t {bt_index_folder}/{Index} {seq_map_folder}/{GSM}_unmapped_{Previously_unmapped}.fasta > {seq_map_folder}/{GSM}_mapped{Index}.bowtie.txt')
 
 rule count_by_lib:
 	input:
@@ -107,9 +141,9 @@ rule count_by_lib:
 		out_text_file=open('GSE37443/output/Counts/count.txt',"a")
 		for i in Full_list:	
 			if os.path.getsize(os.path.join(seq_map_folder,i))<=0:
-				continue
+				out_text_file.write('\n'+i+'\t'+str(0))
 			else:
-				everything = pd.read_csv(os.path.join(seq_map_folder,i),sep="\t+",header=None)
+				everything = pd.read_csv(os.path.join(seq_map_folder,i),sep="\t+",header=None,index_col=False, usecols=[0,1,2,3,4,5,6])
 				def count_one(x):
 					return int(x.split("_",3)[2])
 				def sum_all(everything):
@@ -120,12 +154,48 @@ rule count_by_lib:
 				out_text_file.write('\n'+i+'\t'+str(sum_all(everything)))
 		out_text_file.close()
 
+rule count_unmapped_by_lib:
+	input:
+		'GSE37443/flags/Sequential_mapping.done'
+	output:
+		touch('GSE37443/flags/Count_Sequential_mapping_unmapped.done'),
+		'GSE37443/output/Counts/unmapped_count.txt'
+	run:
+		import os
+		import pandas as pd
+		Full_list=[]
+		seq_map_folder=os.path.dirname('GSE37443/output/Seq_map/')
+		for file in os.listdir(seq_map_folder):
+			if file.endswith("unmapped_Index0.fasta"):
+				Full_list.append(file)
+
+		out_text_file=open('GSE37443/output/Counts/unmapped_count.txt',"a")
+		for i in Full_list:	
+			if os.path.getsize(os.path.join(seq_map_folder,i))<=0:
+				continue
+			else:
+				everything = pd.read_csv(os.path.join(seq_map_folder,i),sep="\t+",header=None)
+				def count_one(x):
+					return int(x.split("_",3)[2])
+				def sum_all(everything):
+					counter=0
+					for i in range(0,len(everything),2):
+						counter+=count_one(everything[0][i])
+					return counter
+				out_text_file.write('\n'+i+'\t'+str(sum_all(everything)))
+		out_text_file.write('\n')
+		out_text_file.close()
+
 rule count_to_graph_R_GSE37443:
 	input:
 		'GSE37443/output/Counts/count.txt',
-		'GSE37443/flags/Count_Sequential_mapping.done'
+		'GSE37443/output/Counts/unmapped_count.txt',
+		'GSE37443/flags/Count_Sequential_mapping.done',
+		'GSE37443/flags/Count_Sequential_mapping_unmapped.done'
 	output:
 		'GSE37443/output/Counts/count.png',
+		'GSE37443/output/Counts/Reads_mapped.png',
+		'GSE37443/output/Counts/percentage_per_lib.png',
 		touch('GSE37443/flags/Count_to_graph.done')
 	script:
-		"Input_files/R_scripts/Count_to_graph_1_GSE37443.R"
+		"Input_files/R_scripts/Universal_count_to_graph_ggplot.R"

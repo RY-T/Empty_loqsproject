@@ -58,6 +58,7 @@ rule map_to_index:
 		for lib in Library_list:
 			Name=lib[:-23]
 			for index in Index_list:
+				shell('echo mapping {lib} to {index}')
 				shell('bowtie -f -n 0 --al {Output_folder}/{Name}.spike.txt {Index_folder}/{index} {small_RNA_lib_folder}/{lib} > {Output_folder}/{Name}.spike.bowtie.txt 2>{Logs_folder}/{Name}.txt')	 
 
 rule count_by_lib_spikein:
