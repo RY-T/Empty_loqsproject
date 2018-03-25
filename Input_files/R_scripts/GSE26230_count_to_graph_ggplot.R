@@ -1,4 +1,4 @@
-#setwd('F:/loqsproject_compile/GSE11086/output/Counts/')
+#setwd('F:/loqsproject_compile/GSE26230/output/Counts/')
 #count_data_raw=read.csv('count.txt',sep = '\t',header = FALSE)
 #Unmapped_reads=read.csv('unmapped_count.txt',sep = '\t',header = FALSE)
 
@@ -13,9 +13,9 @@ do_something <- function(mapped_count, unmapped_count, out_path, next_image, ano
   
   colnames(count_data_raw) <- c("File","counts")
   count_data <- count_data_raw %>%
-  separate(File, c("Lib", "Index"), "_")
+    separate(File, c("Lib", "Index"), "_")
   count_data$Index <-gsub("[^0-9]","",count_data$Index)
-
+  
   attach(count_data)
   count_data$sRNA_Type[as.integer(Index)==0]<-'Total_reads_to_dm6'
   count_data$sRNA_Type[as.integer(Index)>=1 & as.integer(Index)<=7]<-'Background'
@@ -28,12 +28,12 @@ do_something <- function(mapped_count, unmapped_count, out_path, next_image, ano
   count_data$sRNA_Type[as.integer(Index)>=26]<-'NewCisNat'
   detach(count_data)
   #count_data
-
+  
   count_data=aggregate(counts~Lib+sRNA_Type,count_data,sum)
   #head(count_data)
-
+  
   mapped_reads<-subset(count_data,count_data$sRNA_Type=='Total_reads_to_dm6')
-
+  
   sRNA_count_data<-subset(count_data,count_data$sRNA_Type!='Total_reads_to_dm6')
   head(mapped_reads)
   head(sRNA_count_data)
@@ -45,25 +45,16 @@ do_something <- function(mapped_count, unmapped_count, out_path, next_image, ano
   sRNA_count_data <- data %>%
     mutate(cpm=counts/total_counts*1000000)
   
-  #Add_contitions (to customise)
-  #attach(sRNA_count_data)
-  #sRNA_count_data$Condition[as.character(sRNA_count_data$Lib)=='B133'|as.character(sRNA_count_data$Lib)=='B137'|as.character(sRNA_count_data$Lib)=='B141']<-'Gfp-control'
-  #sRNA_count_data$Condition[as.character(sRNA_count_data$Lib)=='B134'|as.character(sRNA_count_data$Lib)=='B138'|as.character(sRNA_count_data$Lib)=='B142']<-'Loqs_PA'
-  #sRNA_count_data$Condition[as.character(sRNA_count_data$Lib)=='B135'|as.character(sRNA_count_data$Lib)=='B139'|as.character(sRNA_count_data$Lib)=='B143']<-'Loqs_PB'
-  #sRNA_count_data$Condition[as.character(sRNA_count_data$Lib)=='B136'|as.character(sRNA_count_data$Lib)=='B140'|as.character(sRNA_count_data$Lib)=='B144']<-'Loqs_PD'
-  #detach(sRNA_count_data)
-
-  #1st plot
-
   graph_count_data <- plyr::ddply(sRNA_count_data, c("Lib","sRNA_Type"), summarise,count=cpm)
-
+  sRNA_library_types <- unique(graph_count_data$Lib)
   sRNA_Type_order=list("Background","miRNA","hpRNA","Retrotransposon","DNA Transposon","Others","OthersiRNA","NewCisNat")
   graph_count_data$sRNA_Type <- factor(graph_count_data$sRNA_Type, levels = sRNA_Type_order)
   count_1 <- ggplot(graph_count_data, aes(x=Lib, y=count, fill=Lib)) + 
     geom_bar(position=position_dodge(), stat="identity")+
     facet_grid(sRNA_Type ~ ., scales = 'free_y', shrink = TRUE)+ 
     theme(strip.text.y = element_text(angle = 0), axis.text.x=element_text(size = 8,angle=45, hjust = 1)) +
-    labs(x='',y='cpm')
+    labs(x='',y='cpm')+
+    scale_fill_discrete(name="Genotype",breaks=sRNA_library_types,labels=c("Loqs-ko/Het","Loqs-KO/Loqs-ko","mut-r2d2/Het","mut-r2d2/mut-r2d2"))
   
   count_1
   
@@ -85,30 +76,30 @@ do_something <- function(mapped_count, unmapped_count, out_path, next_image, ano
     theme(legend.position="none",axis.text.x=element_blank(),axis.ticks.x=element_blank(),axis.title=element_text(size=10))+
     labs(title = "Percentage of reads mapped to dm6", x='',y='' )
   
-
+  
   multi_count <- ggdraw()+
     draw_plot(count_1, 0, 0.25,1,0.75)+
     draw_plot(total_count_plot,0,0,0.4,0.25)+
     draw_plot(percentage_mapped_plot,0.5,0,0.4,0.25)+
     draw_plot_label(c("A", "B","C"),x=c(0, 0,0.5),y=c(1, 0.29,0.29) )
-  multi_count
+  #multi_count
   
   ggsave(out_path,multi_count)
-
+  
   #2nd plot
-
+  
   png(filename = next_image)
   plot<-par(mfrow=c(1,1))
   MappedPercentage_plot=barplot(new_stuff$map_ratio, names.arg = new_stuff$Lib, main = 'Percentage of reads mapped',las=2,col=c(4,2,7,'darkviolet'))
   new_stuff
   dev.off()
-
+  
   png(filename = another_image)
   lib_list <- unique(count_data$Lib)
-
+  
   some_dim_1=plyr::round_any(sqrt(length(lib_list)),1, f=ceiling)
   plot<-par(mfrow=c(some_dim_1,some_dim_1))
-
+  
   head(count_data)
   for (i in lib_list){
     percent=subset(count_data,Lib==i)

@@ -1,4 +1,4 @@
-#setwd('F:/loqsproject_compile/GSE11086/output/Counts/')
+#setwd('F:/loqsproject_compile/GSE37443/output/Counts/')
 #count_data_raw=read.csv('count.txt',sep = '\t',header = FALSE)
 #Unmapped_reads=read.csv('unmapped_count.txt',sep = '\t',header = FALSE)
 
@@ -37,7 +37,7 @@ do_something <- function(mapped_count, unmapped_count, out_path, next_image, ano
   sRNA_count_data<-subset(count_data,count_data$sRNA_Type!='Total_reads_to_dm6')
   head(mapped_reads)
   head(sRNA_count_data)
-  
+  data 
   total_reads_per_lib <- data.frame(mapped_reads[1],mapped_reads[3])
   total_reads_per_lib
   colnames(total_reads_per_lib) <- c('Lib','total_counts')
@@ -45,28 +45,36 @@ do_something <- function(mapped_count, unmapped_count, out_path, next_image, ano
   sRNA_count_data <- data %>%
     mutate(cpm=counts/total_counts*1000000)
   
-  #Add_contitions (to customise)
-  #attach(sRNA_count_data)
-  #sRNA_count_data$Condition[as.character(sRNA_count_data$Lib)=='B133'|as.character(sRNA_count_data$Lib)=='B137'|as.character(sRNA_count_data$Lib)=='B141']<-'Gfp-control'
-  #sRNA_count_data$Condition[as.character(sRNA_count_data$Lib)=='B134'|as.character(sRNA_count_data$Lib)=='B138'|as.character(sRNA_count_data$Lib)=='B142']<-'Loqs_PA'
-  #sRNA_count_data$Condition[as.character(sRNA_count_data$Lib)=='B135'|as.character(sRNA_count_data$Lib)=='B139'|as.character(sRNA_count_data$Lib)=='B143']<-'Loqs_PB'
-  #sRNA_count_data$Condition[as.character(sRNA_count_data$Lib)=='B136'|as.character(sRNA_count_data$Lib)=='B140'|as.character(sRNA_count_data$Lib)=='B144']<-'Loqs_PD'
-  #detach(sRNA_count_data)
-
-  #1st plot
 
   graph_count_data <- plyr::ddply(sRNA_count_data, c("Lib","sRNA_Type"), summarise,count=cpm)
 
   sRNA_Type_order=list("Background","miRNA","hpRNA","Retrotransposon","DNA Transposon","Others","OthersiRNA","NewCisNat")
   graph_count_data$sRNA_Type <- factor(graph_count_data$sRNA_Type, levels = sRNA_Type_order)
-  count_1 <- ggplot(graph_count_data, aes(x=Lib, y=count, fill=Lib)) + 
+  
+  
+  graph_count_data$Lib_no <-gsub("GSM","",graph_count_data$Lib)
+  graph_count_data_wIR <- subset.data.frame(graph_count_data,as.numeric(graph_count_data$Lib_no)<919410)
+  sRNA_library_types_wIR <- unique(graph_count_data_wIR$Lib)
+  graph_count_data_w1118 <- subset.data.frame(graph_count_data,as.numeric(graph_count_data$Lib_no)>=919410)
+  sRNA_library_types_w118 <- unique(graph_count_data_w1118$Lib)
+  count_1 <- ggplot(graph_count_data_wIR, aes(x=Lib, y=count, fill=Lib)) + 
     geom_bar(position=position_dodge(), stat="identity")+
     facet_grid(sRNA_Type ~ ., scales = 'free_y', shrink = TRUE)+ 
-    theme(strip.text.y = element_text(angle = 0), axis.text.x=element_text(size = 8,angle=45, hjust = 1)) +
-    labs(x='',y='cpm')
+    theme(legend.position="none",strip.text.y = element_text(size = 8, angle=0), axis.text.x=element_text(size = 8,angle=45, hjust = 1)) +
+    labs(title='Fly head', x='',y='cpm')+
+    scale_fill_discrete(name="loqs-isoform rescue",breaks=sRNA_library_types_wIR,
+                        labels=c("wt","loqs-PA","loqs-PB","loqs-PA+loqs-PB","loqs-PA+loqs-PD","loqs-PB+loqs-PD",
+                                 "loqs-PA+loqs-PB+loqs-PD","loqs-null control","loqs-ko/loqs-ko","lqos-ko/het" ))
   
-  count_1
-  
+  count_2 <- ggplot(graph_count_data_w1118, aes(x=Lib, y=count, fill=Lib)) + 
+    geom_bar(position=position_dodge(), stat="identity")+
+    facet_grid(sRNA_Type ~ ., scales = 'free_y', shrink = TRUE)+ 
+    theme(strip.text.y = element_text(angle = 0, size = 8), axis.text.x=element_text(size = 8,angle=45, hjust = 1)) +
+    labs(title='Fly Ovary', x='',y='cpm')+
+    scale_fill_discrete(name="loqs-isoform rescue",breaks=sRNA_library_types_w118,
+                        labels=c("wt","loqs-PA","loqs-PB","loqs-PA+loqs-PB","loqs-PA+loqs-PD","loqs-PB+loqs-PD",
+                                 "loqs-PA+loqs-PB+loqs-PD","loqs-null control","loqs-ko/loqs-ko","lqos-ko/het" ))
+  count_2
   colnames(Unmapped_reads) <- c("File","unmap counts")
   unmap_count_data <- Unmapped_reads %>%
     separate(File, c("Lib"), "_")
@@ -75,32 +83,42 @@ do_something <- function(mapped_count, unmapped_count, out_path, next_image, ano
   
   new_stuff$map_ratio=new_stuff$counts/(new_stuff$counts+new_stuff$`unmap counts`)
   
-  total_count_plot <- ggplot(new_stuff, aes(x=Lib, y=counts, fill=Lib)) + 
+  total_count_plot <- ggplot(new_stuff, aes(x=Lib, y=counts, fill=rep(sRNA_library_types_wIR,2))) + 
     geom_bar(position=position_dodge(), stat="identity")+
     theme(legend.position="none",axis.text.x=element_blank(),axis.ticks.x=element_blank(),axis.title=element_text(size=10))+
     labs(title = "Total read counts mapped to dm6", x='',y='')
   
-  percentage_mapped_plot <- ggplot(new_stuff, aes(x=Lib, y=map_ratio, fill=Lib)) + 
+  percentage_mapped_plot <- ggplot(new_stuff, aes(x=Lib, y=map_ratio, fill=rep(sRNA_library_types_wIR,2))) + 
     geom_bar(position=position_dodge(), stat="identity")+
     theme(legend.position="none",axis.text.x=element_blank(),axis.ticks.x=element_blank(),axis.title=element_text(size=10))+
     labs(title = "Percentage of reads mapped to dm6", x='',y='' )
   
-
-  multi_count <- ggdraw()+
-    draw_plot(count_1, 0, 0.25,1,0.75)+
-    draw_plot(total_count_plot,0,0,0.4,0.25)+
-    draw_plot(percentage_mapped_plot,0.5,0,0.4,0.25)+
-    draw_plot_label(c("A", "B","C"),x=c(0, 0,0.5),y=c(1, 0.29,0.29) )
-  multi_count
   
-  ggsave(out_path,multi_count)
+  multi_count <- ggdraw()+
+    draw_plot(count_1, 0, 0.20,0.38,0.80)+
+    draw_plot(count_2, 0.38, 0.20,0.62,0.80)+
+    draw_plot(total_count_plot,0,0,0.4,0.20)+
+    draw_plot(percentage_mapped_plot,0.5,0,0.4,0.20)+
+    draw_plot_label(c("A", "B","C","D"),x=c(0,0.38,0,0.5),y=c(1, 1, 0.21,0.21) )
+  
+  multi_count
+  ?plot_grid
+  save_plot(out_path,multi_count)
+  
 
   #2nd plot
 
+  colnames(Unmapped_reads) <- c("File","unmap counts")
+  unmap_count_data <- Unmapped_reads %>%
+    separate(File, c("Lib"), "_")
+
+  new_stuff <- merge(mapped_reads,unmap_count_data, by = 'Lib')
+
+  new_stuff$map_ratio=new_stuff$counts/(new_stuff$counts+new_stuff$`unmap counts`)
+  new_stuff$map_ratio
   png(filename = next_image)
   plot<-par(mfrow=c(1,1))
   MappedPercentage_plot=barplot(new_stuff$map_ratio, names.arg = new_stuff$Lib, main = 'Percentage of reads mapped',las=2,col=c(4,2,7,'darkviolet'))
-  new_stuff
   dev.off()
 
   png(filename = another_image)
